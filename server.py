@@ -11,7 +11,7 @@ Protocol   : MCP 2024-11-05
 Auth       : credentials loaded from .env via python-dotenv
 API backend: pyzabbix (thin Python wrapper over the Zabbix JSON-RPC API)
 
-Tool categories (10 total)
+Tool categories (21 total)
 ---------------------------
   Hosts — read-only (3)
     list_hosts, get_host, search_hosts
@@ -24,6 +24,27 @@ Tool categories (10 total)
 
   Maintenance (3)
     get_maintenances, create_maintenance, delete_maintenance
+
+  Host Groups — read-only (1)
+    get_host_groups
+
+  Events (3)
+    get_events, acknowledge_problem, get_top_hosts_by_problems
+
+  Graphs — read-only (2)
+    get_graphs, get_graph_items
+
+  Templates — read-only (1)
+    get_templates
+
+  Inventory — read-only (1)
+    get_host_inventory
+
+  Actions — read-only (1)
+    get_actions
+
+  Users / Groups — read-only (2)
+    get_users, get_user_groups
 
 Authentication
 --------------
@@ -369,6 +390,257 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["maintenanceid"],
             },
         ),
+
+        # ── Top hosts by problems ─────────────────────────────────────────
+
+        types.Tool(
+            name="get_top_hosts_by_problems",
+            description=(
+                "Return a ranked list of hosts ordered by number of PROBLEM events "
+                "in the last N hours. Use this to answer questions like "
+                "'which server had the most problems this week'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Time window in hours (default 168 = 7 days).",
+                    },
+                    "min_severity": {
+                        "type": "integer",
+                        "enum": [0, 1, 2, 3, 4, 5],
+                        "description": "Minimum severity to count (default 0).",
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "How many hosts to return in the ranking (default 10).",
+                    },
+                },
+            },
+        ),
+
+        # ── Host Groups ───────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_host_groups",
+            description=(
+                "List all Zabbix host groups with their IDs and names. "
+                "Use the returned groupid values to filter other tools such as "
+                "list_hosts, get_problems and get_triggers."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on group name.",
+                    },
+                },
+            },
+        ),
+
+        # ── Events ────────────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_events",
+            description=(
+                "Retrieve historical Zabbix events (problems and recoveries) "
+                "for a given time window. Results are sorted newest first."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "How many hours back to look (default 24).",
+                    },
+                    "hostid": {
+                        "type": "string",
+                        "description": "Filter events for a specific host ID (optional).",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Filter events for a specific host group ID (optional).",
+                    },
+                    "min_severity": {
+                        "type": "integer",
+                        "enum": [0, 1, 2, 3, 4, 5],
+                        "description": "Minimum severity to include (default 0).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum events to return (default 100).",
+                    },
+                },
+            },
+        ),
+
+        # ── Acknowledge ───────────────────────────────────────────────────
+
+        types.Tool(
+            name="acknowledge_problem",
+            description=(
+                "Acknowledge one or more Zabbix problems (events). "
+                "Optionally add a message and/or close the problem if the trigger allows manual close."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "eventids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of event IDs to acknowledge (use get_problems to find them).",
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Acknowledgement message (optional).",
+                    },
+                    "close": {
+                        "type": "boolean",
+                        "description": "Also close the problem if the trigger supports manual close (default false).",
+                    },
+                },
+                "required": ["eventids"],
+            },
+        ),
+
+        # ── Graphs ────────────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_graphs",
+            description=(
+                "List graphs defined for a Zabbix host, including the graph name, "
+                "dimensions and number of items plotted."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID.",
+                    },
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on graph name.",
+                    },
+                },
+                "required": ["hostid"],
+            },
+        ),
+        types.Tool(
+            name="get_graph_items",
+            description=(
+                "List the items (metrics) that make up a specific Zabbix graph."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "graphid": {
+                        "type": "string",
+                        "description": "Zabbix graph ID (use get_graphs to find it).",
+                    },
+                },
+                "required": ["graphid"],
+            },
+        ),
+
+        # ── Templates ─────────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_templates",
+            description=(
+                "List Zabbix templates with their IDs and names. "
+                "Optionally filter by name substring or by host ID to see which "
+                "templates are linked to a specific host."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on template name.",
+                    },
+                    "hostid": {
+                        "type": "string",
+                        "description": "Return only templates linked to this host ID (optional).",
+                    },
+                },
+            },
+        ),
+
+        # ── Host Inventory ────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_host_inventory",
+            description=(
+                "Return the inventory record for a Zabbix host: OS, hardware, "
+                "location, contact, serial numbers and other asset fields."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID.",
+                    },
+                },
+                "required": ["hostid"],
+            },
+        ),
+
+        # ── Actions ───────────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_actions",
+            description=(
+                "List Zabbix actions (alerting rules) with their names, status "
+                "and the event source they react to (trigger, discovery, etc.)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on action name.",
+                    },
+                },
+            },
+        ),
+
+        # ── Users / User Groups ───────────────────────────────────────────
+
+        types.Tool(
+            name="get_users",
+            description=(
+                "List Zabbix users with their username, display name, role and "
+                "the user groups they belong to."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on username or name.",
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="get_user_groups",
+            description=(
+                "List Zabbix user groups with their IDs, names and GUI access level."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Optional substring filter on group name.",
+                    },
+                },
+            },
+        ),
     ]
 
 # ---------------------------------------------------------------------------
@@ -697,6 +969,309 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         maintenanceid = arguments["maintenanceid"]
         zapi.maintenance.delete([maintenanceid])
         return [types.TextContent(type="text", text=f"Maintenance {maintenanceid} deleted.")]
+
+    # ── Top hosts by problems ─────────────────────────────────────────────────
+
+    if name == "get_top_hosts_by_problems":
+        from collections import Counter
+
+        hours = float(arguments.get("hours", 168))
+        min_severity = arguments.get("min_severity", 0)
+        top_n = int(arguments.get("top_n", 10))
+
+        now = int(datetime.datetime.now().timestamp())
+        time_from = now - int(hours * 3600)
+
+        events = zapi.event.get(
+            source=0,
+            object=0,
+            value=1,  # PROBLEM events only
+            time_from=time_from,
+            time_till=now,
+            severities=list(range(min_severity, 6)),
+            selectHosts=["hostid", "host", "name"],
+            output=["eventid", "severity"],
+            limit=10000,
+        )
+        if not events:
+            return [types.TextContent(type="text", text="No problem events found in this period.")]
+
+        host_counts: Counter = Counter()
+        host_labels: dict = {}
+        for e in events:
+            for h in e.get("hosts", []):
+                hid = h["hostid"]
+                host_counts[hid] += 1
+                host_labels[hid] = h.get("name") or h.get("host", hid)
+
+        if not host_counts:
+            return [types.TextContent(type="text", text="No host information found in events.")]
+
+        window = util.duration(int(hours * 3600))
+        lines = [f"Top {top_n} hosts by problem count (last {window}):"]
+        for rank, (hid, count) in enumerate(host_counts.most_common(top_n), start=1):
+            lines.append(f"  {rank:>2}. {host_labels[hid]} — {count} problem(s)  [hostid={hid}]")
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Host Groups ───────────────────────────────────────────────────────────
+
+    if name == "get_host_groups":
+        params: dict = {
+            "output": ["groupid", "name"],
+            "sortfield": "name",
+        }
+        if "search" in arguments:
+            params["search"] = {"name": arguments["search"]}
+
+        groups = zapi.hostgroup.get(**params)
+        if not groups:
+            return [types.TextContent(type="text", text="No host groups found.")]
+
+        lines = [f"ID={g['groupid']} | {g['name']}" for g in groups]
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Events ────────────────────────────────────────────────────────────────
+
+    if name == "get_events":
+        hours = float(arguments.get("hours", 24))
+        limit = arguments.get("limit", 100)
+        min_severity = arguments.get("min_severity", 0)
+
+        now = int(datetime.datetime.now().timestamp())
+        time_from = now - int(hours * 3600)
+
+        params = {
+            "output": ["eventid", "objectid", "name", "severity", "clock", "acknowledged", "value"],
+            "selectHosts": ["hostid", "host", "name"],
+            "source": 0,
+            "object": 0,
+            "time_from": time_from,
+            "time_till": now,
+            "severities": list(range(min_severity, 6)),
+            "sortfield": "clock",
+            "sortorder": "DESC",
+            "limit": limit,
+        }
+        if "hostid" in arguments:
+            params["hostids"] = [arguments["hostid"]]
+        if "groupid" in arguments:
+            params["groupids"] = [arguments["groupid"]]
+
+        events = zapi.event.get(**params)
+        if not events:
+            return [types.TextContent(type="text", text="No events found.")]
+
+        _EVENT_VALUE = {"0": "OK", "1": "PROBLEM"}
+        lines = []
+        for e in events:
+            state = _EVENT_VALUE.get(str(e.get("value", "0")), "?")
+            ack = "ack" if e.get("acknowledged") == "1" else "unack"
+            hosts_str = ", ".join(
+                h.get("name") or h.get("host", "?") for h in e.get("hosts", [])
+            ) or "?"
+            lines.append(
+                f"[{util.severity(e['severity'])}] [{state}] {e['name']} | "
+                f"host={hosts_str} | time={util.ts(e['clock'])} | {ack} | eventid={e['eventid']}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Acknowledge ───────────────────────────────────────────────────────────
+
+    if name == "acknowledge_problem":
+        eventids = arguments["eventids"]
+        message = arguments.get("message", "")
+        close = arguments.get("close", False)
+
+        # action bitmask: 2=acknowledge, 4=add message, 1=close
+        action = 2
+        if message:
+            action |= 4
+        if close:
+            action |= 1
+
+        kwargs: dict = {"eventids": eventids, "action": action}
+        if message:
+            kwargs["message"] = message
+
+        zapi.event.acknowledge(**kwargs)
+        closed_str = " and closed" if close else ""
+        msg_str = f" with message: {message!r}" if message else ""
+        return [types.TextContent(
+            type="text",
+            text=f"Acknowledged{closed_str} {len(eventids)} event(s){msg_str}.",
+        )]
+
+    # ── Graphs ────────────────────────────────────────────────────────────────
+
+    if name == "get_graphs":
+        hostid = arguments["hostid"]
+        params = {
+            "hostids": [hostid],
+            "output": ["graphid", "name", "width", "height", "graphtype", "gitems"],
+            "selectGraphItems": ["itemid"],
+            "sortfield": "name",
+        }
+        if "search" in arguments:
+            params["search"] = {"name": arguments["search"]}
+
+        graphs = zapi.graph.get(**params)
+        if not graphs:
+            return [types.TextContent(type="text", text="No graphs found.")]
+
+        _GRAPH_TYPE = {"0": "normal", "1": "stacked", "2": "pie", "3": "exploded"}
+        lines = []
+        for g in graphs:
+            n_items = len(g.get("gitems") or [])
+            gtype = _GRAPH_TYPE.get(str(g.get("graphtype", "0")), "?")
+            lines.append(
+                f"ID={g['graphid']} | {g['name']} | {gtype} | "
+                f"{g.get('width', '?')}x{g.get('height', '?')} | items={n_items}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    if name == "get_graph_items":
+        graphid = arguments["graphid"]
+        gitems = zapi.graphitem.get(
+            graphids=[graphid],
+            output=["gitemid", "itemid", "color", "drawtype", "yaxisside"],
+            selectItem=["itemid", "name", "key_", "units"],
+        )
+        if not gitems:
+            return [types.TextContent(type="text", text="No items found for this graph.")]
+
+        lines = []
+        for gi in gitems:
+            item = gi.get("item") or {}
+            lines.append(
+                f"itemid={gi['itemid']} | {item.get('name', '?')} | "
+                f"key={item.get('key_', '?')} | units={item.get('units', '')} | "
+                f"color=#{gi.get('color', '?')}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Templates ─────────────────────────────────────────────────────────────
+
+    if name == "get_templates":
+        params = {
+            "output": ["templateid", "name", "description"],
+            "sortfield": "name",
+        }
+        if "search" in arguments:
+            params["search"] = {"name": arguments["search"]}
+        if "hostid" in arguments:
+            params["hostids"] = [arguments["hostid"]]
+
+        templates = zapi.template.get(**params)
+        if not templates:
+            return [types.TextContent(type="text", text="No templates found.")]
+
+        lines = []
+        for t in templates:
+            desc = f" | {t['description']}" if t.get("description") else ""
+            lines.append(f"ID={t['templateid']} | {t['name']}{desc}")
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Host Inventory ────────────────────────────────────────────────────────
+
+    if name == "get_host_inventory":
+        hostid = arguments["hostid"]
+        hosts = zapi.host.get(
+            hostids=[hostid],
+            output=["hostid", "host", "name"],
+            selectInventory="extend",
+        )
+        if not hosts:
+            return [types.TextContent(type="text", text="Host not found.")]
+
+        h = hosts[0]
+        inv = h.get("inventory") or {}
+        if not inv:
+            return [types.TextContent(
+                type="text",
+                text=f"Host {h['host']} has no inventory data populated.",
+            )]
+
+        lines = [f"Inventory for {h['host']} (id={hostid}):"]
+        for key, value in inv.items():
+            if value:
+                lines.append(f"  {key}: {value}")
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Actions ───────────────────────────────────────────────────────────────
+
+    if name == "get_actions":
+        _EVENTSOURCE = {"0": "trigger", "1": "discovery", "2": "autoregistration", "3": "internal"}
+        _ACTION_STATUS = {"0": "enabled", "1": "disabled"}
+
+        params = {
+            "output": ["actionid", "name", "eventsource", "status"],
+            "sortfield": "name",
+        }
+        if "search" in arguments:
+            params["search"] = {"name": arguments["search"]}
+
+        actions = zapi.action.get(**params)
+        if not actions:
+            return [types.TextContent(type="text", text="No actions found.")]
+
+        lines = []
+        for a in actions:
+            source = _EVENTSOURCE.get(str(a.get("eventsource", "0")), "?")
+            status = _ACTION_STATUS.get(str(a.get("status", "0")), "?")
+            lines.append(f"ID={a['actionid']} | {a['name']} | source={source} | {status}")
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Users ─────────────────────────────────────────────────────────────────
+
+    if name == "get_users":
+        params = {
+            "output": ["userid", "username", "name", "surname", "roleid"],
+            "selectUsrgrps": ["usrgrpid", "name"],
+            "sortfield": "username",
+        }
+        if "search" in arguments:
+            q = arguments["search"]
+            params["search"] = {"username": q, "name": q}
+            params["searchByAny"] = True
+
+        users = zapi.user.get(**params)
+        if not users:
+            return [types.TextContent(type="text", text="No users found.")]
+
+        lines = []
+        for u in users:
+            full_name = f"{u.get('name', '')} {u.get('surname', '')}".strip()
+            groups = ", ".join(g["name"] for g in u.get("usrgrps", []))
+            lines.append(
+                f"ID={u['userid']} | {u['username']}"
+                + (f" ({full_name})" if full_name else "")
+                + (f" | groups={groups}" if groups else "")
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    if name == "get_user_groups":
+        _GUI_ACCESS = {"0": "default", "1": "internal", "2": "LDAP", "3": "disabled"}
+        _UG_STATUS = {"0": "enabled", "1": "disabled"}
+
+        params = {
+            "output": ["usrgrpid", "name", "gui_access", "users_status"],
+            "sortfield": "name",
+        }
+        if "search" in arguments:
+            params["search"] = {"name": arguments["search"]}
+
+        groups = zapi.usergroup.get(**params)
+        if not groups:
+            return [types.TextContent(type="text", text="No user groups found.")]
+
+        lines = []
+        for g in groups:
+            gui = _GUI_ACCESS.get(str(g.get("gui_access", "0")), "?")
+            status = _UG_STATUS.get(str(g.get("users_status", "0")), "?")
+            lines.append(
+                f"ID={g['usrgrpid']} | {g['name']} | gui_access={gui} | {status}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
 
     raise ValueError(f"Unknown tool: {name}")
 

@@ -7,8 +7,9 @@ capabilities as callable tools for AI agents and MCP-compatible clients.
 
 ## Features
 
-- 10 tools across 4 categories (hosts, problems/triggers, items/history,
-  maintenance)
+- 20 tools across 9 categories (hosts, problems/triggers, items/history,
+  maintenance, host groups, events, graphs, templates, inventory, actions,
+  users)
 - Transport: **stdio** — JSON-RPC 2.0 framing managed by the `mcp` library
 - Protocol: **MCP 2024-11-05**
 - Auth: API token (Zabbix 5.4+) or user/password, loaded from `.env`
@@ -145,6 +146,52 @@ You: Show me all active problems with severity High or above
 | `get_maintenances` | List all maintenance windows with scope and active period. |
 | `create_maintenance` | Create a one-time maintenance window. Required: `name`, `hostids`, `start_time` (ISO 8601), `duration_minutes`. |
 | `delete_maintenance` | Delete a maintenance window by `maintenanceid`. |
+
+### Host Groups
+
+| Tool | Description |
+|---|---|
+| `get_host_groups` | List all host groups with IDs and names. Optional: `search`. Use `groupid` results to filter `list_hosts`, `get_problems`, etc. |
+
+### Events
+
+| Tool | Description |
+|---|---|
+| `get_events` | Historical events (problems + recoveries) for a time window, including hostname. Optional: `hours` (default 24), `hostid`, `groupid`, `min_severity`, `limit`. |
+| `acknowledge_problem` | Acknowledge one or more events by `eventids`. Optional: `message`, `close`. |
+| `get_top_hosts_by_problems` | Ranked list of hosts by problem count in a time window. Optional: `hours` (default 168), `min_severity`, `top_n` (default 10). |
+
+### Graphs
+
+| Tool | Description |
+|---|---|
+| `get_graphs` | Graphs defined for a host. Required: `hostid`. Optional: `search`. |
+| `get_graph_items` | Items (metrics) that make up a graph. Required: `graphid`. |
+
+### Templates
+
+| Tool | Description |
+|---|---|
+| `get_templates` | List templates. Optional: `search`, `hostid` (filter by linked host). |
+
+### Inventory
+
+| Tool | Description |
+|---|---|
+| `get_host_inventory` | Full inventory record for a host (OS, hardware, location, serial numbers). Required: `hostid`. |
+
+### Actions
+
+| Tool | Description |
+|---|---|
+| `get_actions` | List alerting actions with status and event source. Optional: `search`. |
+
+### Users / Groups
+
+| Tool | Description |
+|---|---|
+| `get_users` | List users with username, display name and group membership. Optional: `search`. |
+| `get_user_groups` | List user groups with GUI access level and status. Optional: `search`. |
 
 #### Severity codes
 
