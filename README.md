@@ -7,9 +7,9 @@ capabilities as callable tools for AI agents and MCP-compatible clients.
 
 ## Features
 
-- 20 tools across 9 categories (hosts, problems/triggers, items/history,
+- 30 tools across 11 categories (hosts, problems/triggers, items/history,
   maintenance, host groups, events, graphs, templates, inventory, actions,
-  users)
+  users, analytics, operational)
 - Transport: **stdio** — JSON-RPC 2.0 framing managed by the `mcp` library
 - Protocol: **MCP 2024-11-05**
 - Auth: API token (Zabbix 5.4+) or user/password, loaded from `.env`
@@ -185,6 +185,25 @@ You: Show me all active problems with severity High or above
 | Tool | Description |
 |---|---|
 | `get_actions` | List alerting actions with status and event source. Optional: `search`. |
+
+### Analytics
+
+| Tool | Description |
+|---|---|
+| `get_flapping_triggers` | Triggers with most state changes (PROBLEM↔OK) in a window — identifies noisy thresholds. Optional: `hours`, `hostid`, `groupid`, `min_flaps` (default 2), `top_n`. |
+| `get_availability_report` | Uptime % per host computed from PROBLEM events and their recoveries. Optional: `hours` (default 720 = 30d), `hostids`, `groupid`, `min_severity` (default 3). |
+| `get_trends` | Hourly aggregated trend data (min/avg/max) for an item over days/months. Required: `itemid`. Optional: `hours` (default 720), `limit`. |
+| `get_problem_duration_stats` | Per-trigger stats: count, total/avg/max downtime. Optional: `hours`, `hostid`, `groupid`, `min_severity`, `top_n`. |
+
+### Operational
+
+| Tool | Description |
+|---|---|
+| `enable_host` | Enable monitoring for a host. Required: `hostid`. |
+| `disable_host` | Disable monitoring for a host. Required: `hostid`. |
+| `update_maintenance` | Update an existing maintenance window (name, time, duration, collect_data). Required: `maintenanceid`. |
+| `add_host_to_group` | Add a host to a host group. Required: `hostid`, `groupid`. |
+| `remove_host_from_group` | Remove a host from a host group. Required: `hostid`, `groupid`. |
 
 ### Users / Groups
 

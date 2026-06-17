@@ -11,7 +11,7 @@ Protocol   : MCP 2024-11-05
 Auth       : credentials loaded from .env via python-dotenv
 API backend: pyzabbix (thin Python wrapper over the Zabbix JSON-RPC API)
 
-Tool categories (21 total)
+Tool categories (30 total)
 ---------------------------
   Hosts — read-only (3)
     list_hosts, get_host, search_hosts
@@ -22,8 +22,8 @@ Tool categories (21 total)
   Items / History — read-only (2)
     get_items, get_history
 
-  Maintenance (3)
-    get_maintenances, create_maintenance, delete_maintenance
+  Maintenance (4)
+    get_maintenances, create_maintenance, update_maintenance, delete_maintenance
 
   Host Groups — read-only (1)
     get_host_groups
@@ -45,6 +45,14 @@ Tool categories (21 total)
 
   Users / Groups — read-only (2)
     get_users, get_user_groups
+
+  Analytics — read-only (4)
+    get_flapping_triggers, get_availability_report,
+    get_trends, get_problem_duration_stats
+
+  Operational — write (4)
+    enable_host, disable_host,
+    add_host_to_group, remove_host_from_group
 
 Authentication
 --------------
@@ -391,6 +399,133 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
 
+        # ── Analytics ─────────────────────────────────────────────────────
+
+        types.Tool(
+            name="get_flapping_triggers",
+            description=(
+                "Identify triggers that changed state most frequently (PROBLEM ↔ OK) "
+                "in a given time window. High flap counts indicate noisy or misconfigured "
+                "thresholds."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Time window in hours (default 24).",
+                    },
+                    "hostid": {
+                        "type": "string",
+                        "description": "Restrict to a specific host ID (optional).",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Restrict to a specific host group ID (optional).",
+                    },
+                    "min_flaps": {
+                        "type": "integer",
+                        "description": "Minimum number of state changes to include (default 2).",
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "How many triggers to return (default 15).",
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="get_availability_report",
+            description=(
+                "Calculate uptime percentage for each host in a time window. "
+                "Downtime is computed from PROBLEM events and their recoveries. "
+                "Use this for SLA-like questions: 'how available was X last month?'"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Time window in hours (default 720 = 30 days).",
+                    },
+                    "hostids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of host IDs to report on (optional — omit for all hosts).",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Filter to a host group ID (optional).",
+                    },
+                    "min_severity": {
+                        "type": "integer",
+                        "enum": [0, 1, 2, 3, 4, 5],
+                        "description": "Minimum severity to count as downtime (default 3 = Average).",
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="get_trends",
+            description=(
+                "Retrieve hourly aggregated trend data (min / avg / max) for a Zabbix item. "
+                "Trends cover longer windows than history (days to months) without high resolution. "
+                "Use for capacity-planning questions: 'how has CPU grown over the last month?'"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "itemid": {
+                        "type": "string",
+                        "description": "Zabbix item ID (use get_items to find it).",
+                    },
+                    "hours": {
+                        "type": "number",
+                        "description": "How many hours of trends to retrieve (default 720 = 30 days).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum data points to return (default 200).",
+                    },
+                },
+                "required": ["itemid"],
+            },
+        ),
+        types.Tool(
+            name="get_problem_duration_stats",
+            description=(
+                "For each trigger, compute total, average and maximum problem duration "
+                "over a time window. Identifies which issues are longest-lasting and "
+                "most impactful."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Time window in hours (default 168 = 7 days).",
+                    },
+                    "hostid": {
+                        "type": "string",
+                        "description": "Restrict to a specific host ID (optional).",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Restrict to a specific host group ID (optional).",
+                    },
+                    "min_severity": {
+                        "type": "integer",
+                        "enum": [0, 1, 2, 3, 4, 5],
+                        "description": "Minimum severity to include (default 0).",
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "How many triggers to return, sorted by total downtime (default 15).",
+                    },
+                },
+            },
+        ),
+
         # ── Top hosts by problems ─────────────────────────────────────────
 
         types.Tool(
@@ -639,6 +774,111 @@ async def list_tools() -> list[types.Tool]:
                         "description": "Optional substring filter on group name.",
                     },
                 },
+            },
+        ),
+
+        # ── Operational ───────────────────────────────────────────────────
+
+        types.Tool(
+            name="enable_host",
+            description="Enable monitoring for a Zabbix host (set status to 0).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID to enable.",
+                    },
+                },
+                "required": ["hostid"],
+            },
+        ),
+        types.Tool(
+            name="disable_host",
+            description="Disable monitoring for a Zabbix host (set status to 1).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID to disable.",
+                    },
+                },
+                "required": ["hostid"],
+            },
+        ),
+        types.Tool(
+            name="update_maintenance",
+            description=(
+                "Update an existing Zabbix maintenance window. "
+                "All fields are optional — only provided fields are changed. "
+                "Use get_maintenances to find the maintenanceid."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "maintenanceid": {
+                        "type": "string",
+                        "description": "ID of the maintenance window to update.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "New name (optional).",
+                    },
+                    "start_time": {
+                        "type": "string",
+                        "description": "New start time in ISO 8601 format (optional).",
+                    },
+                    "duration_minutes": {
+                        "type": "integer",
+                        "description": "New duration in minutes (optional).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description (optional).",
+                    },
+                    "collect_data": {
+                        "type": "boolean",
+                        "description": "Whether to collect data during maintenance (optional).",
+                    },
+                },
+                "required": ["maintenanceid"],
+            },
+        ),
+        types.Tool(
+            name="add_host_to_group",
+            description="Add a host to a Zabbix host group.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID.",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Zabbix host group ID.",
+                    },
+                },
+                "required": ["hostid", "groupid"],
+            },
+        ),
+        types.Tool(
+            name="remove_host_from_group",
+            description="Remove a host from a Zabbix host group.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hostid": {
+                        "type": "string",
+                        "description": "Zabbix host ID.",
+                    },
+                    "groupid": {
+                        "type": "string",
+                        "description": "Zabbix host group ID.",
+                    },
+                },
+                "required": ["hostid", "groupid"],
             },
         ),
     ]
@@ -1272,6 +1512,332 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 f"ID={g['usrgrpid']} | {g['name']} | gui_access={gui} | {status}"
             )
         return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Analytics ─────────────────────────────────────────────────────────────
+
+    if name == "get_flapping_triggers":
+        from collections import Counter
+
+        hours = float(arguments.get("hours", 24))
+        min_flaps = int(arguments.get("min_flaps", 2))
+        top_n = int(arguments.get("top_n", 15))
+
+        now = int(datetime.datetime.now().timestamp())
+        time_from = now - int(hours * 3600)
+
+        params = {
+            "source": 0,
+            "object": 0,
+            "time_from": time_from,
+            "time_till": now,
+            "output": ["objectid", "name", "value", "clock"],
+            "selectHosts": ["hostid", "host", "name"],
+            "limit": 20000,
+        }
+        if "hostid" in arguments:
+            params["hostids"] = [arguments["hostid"]]
+        if "groupid" in arguments:
+            params["groupids"] = [arguments["groupid"]]
+
+        events = zapi.event.get(**params)
+        if not events:
+            return [types.TextContent(type="text", text="No events found in this period.")]
+
+        flap_count: Counter = Counter()
+        trigger_meta: dict = {}
+        for e in events:
+            tid = e["objectid"]
+            flap_count[tid] += 1
+            if tid not in trigger_meta:
+                hosts_str = ", ".join(
+                    h.get("name") or h.get("host", "?") for h in e.get("hosts", [])
+                )
+                trigger_meta[tid] = {"name": e.get("name", tid), "hosts": hosts_str}
+
+        top = [(tid, cnt) for tid, cnt in flap_count.most_common(top_n) if cnt >= min_flaps]
+        if not top:
+            return [types.TextContent(
+                type="text",
+                text=f"No triggers with ≥{min_flaps} state changes in the last {util.duration(int(hours * 3600))}.",
+            )]
+
+        window = util.duration(int(hours * 3600))
+        lines = [f"Top {len(top)} flapping triggers (last {window}, min_flaps={min_flaps}):"]
+        for rank, (tid, cnt) in enumerate(top, start=1):
+            meta = trigger_meta.get(tid, {})
+            lines.append(
+                f"  {rank:>2}. [{cnt} changes] {meta.get('name', tid)} "
+                f"| host={meta.get('hosts', '?')} | triggerid={tid}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    if name == "get_availability_report":
+        hours = float(arguments.get("hours", 720))
+        min_severity = arguments.get("min_severity", 3)
+
+        now = int(datetime.datetime.now().timestamp())
+        window_start = now - int(hours * 3600)
+
+        params = {
+            "source": 0,
+            "object": 0,
+            "value": 1,  # PROBLEM events only
+            "time_from": window_start,
+            "time_till": now,
+            "severities": list(range(min_severity, 6)),
+            "output": ["eventid", "clock", "r_eventid"],
+            "selectHosts": ["hostid", "host", "name"],
+            "limit": 20000,
+        }
+        if "hostids" in arguments:
+            params["hostids"] = arguments["hostids"]
+        if "groupid" in arguments:
+            params["groupids"] = [arguments["groupid"]]
+
+        prob_events = zapi.event.get(**params)
+        if not prob_events:
+            return [types.TextContent(type="text", text="No problem events found in this period.")]
+
+        # Fetch recovery clocks for all events that have r_eventid
+        r_ids = [e["r_eventid"] for e in prob_events if e.get("r_eventid") and e["r_eventid"] != "0"]
+        recovery_clock: dict = {}
+        if r_ids:
+            rec_events = zapi.event.get(
+                eventids=r_ids,
+                output=["eventid", "clock"],
+            )
+            recovery_clock = {e["eventid"]: int(e["clock"]) for e in rec_events}
+
+        # Accumulate downtime per host
+        host_downtime: dict = {}
+        host_labels: dict = {}
+        for e in prob_events:
+            start = max(int(e["clock"]), window_start)
+            r_eid = e.get("r_eventid", "0")
+            end = recovery_clock.get(r_eid, now) if r_eid and r_eid != "0" else now
+            end = min(end, now)
+            duration_s = max(0, end - start)
+
+            for h in e.get("hosts", []):
+                hid = h["hostid"]
+                host_downtime[hid] = host_downtime.get(hid, 0) + duration_s
+                host_labels[hid] = h.get("name") or h.get("host", hid)
+
+        window_seconds = now - window_start
+        window_str = util.duration(window_seconds)
+        lines = [f"Availability report — last {window_str} (severity ≥ {util.severity(str(min_severity))}):"]
+        for hid, downtime in sorted(host_downtime.items(), key=lambda x: x[1], reverse=True):
+            uptime_pct = 100.0 * (1 - downtime / window_seconds) if window_seconds else 100.0
+            lines.append(
+                f"  {host_labels[hid]:<40} uptime={uptime_pct:6.2f}%  "
+                f"downtime={util.duration(downtime)}  [hostid={hid}]"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    if name == "get_trends":
+        itemid = arguments["itemid"]
+        hours = float(arguments.get("hours", 720))
+        limit = arguments.get("limit", 200)
+
+        # Resolve value_type to choose the correct trend table
+        items = zapi.item.get(itemids=[itemid], output=["value_type", "name", "units"])
+        if not items:
+            return [types.TextContent(type="text", text=f"Item {itemid} not found.")]
+
+        item = items[0]
+        value_type = int(item["value_type"])
+
+        now = int(datetime.datetime.now().timestamp())
+        time_from = now - int(hours * 3600)
+
+        # Zabbix stores float (0) and uint (3) trends; char/log/text have no trends
+        if value_type not in (0, 3):
+            return [types.TextContent(
+                type="text",
+                text=f"Item '{item['name']}' has value_type={util.item_value_type(str(value_type))} — trends only available for float and uint items.",
+            )]
+
+        trend_api = zapi.trend if value_type == 0 else zapi.trend_uint
+        trends = trend_api.get(
+            itemids=[itemid],
+            time_from=time_from,
+            time_till=now,
+            output=["clock", "num", "value_min", "value_avg", "value_max"],
+            sortfield="clock",
+            sortorder="DESC",
+            limit=limit,
+        )
+        if not trends:
+            return [types.TextContent(
+                type="text",
+                text=f"No trend data for item {itemid} in the last {util.duration(int(hours * 3600))}.",
+            )]
+
+        units = f" {item['units']}" if item.get("units") else ""
+        header = f"Trends for '{item['name']}' (id={itemid}) — last {util.duration(int(hours * 3600))}"
+        lines = [header, f"  {'time':<20} {'min':>12} {'avg':>12} {'max':>12}  samples"]
+        for t in trends:
+            lines.append(
+                f"  {util.ts(t['clock']):<20} "
+                f"{t['value_min']:>12}{units} "
+                f"{t['value_avg']:>12}{units} "
+                f"{t['value_max']:>12}{units}  n={t['num']}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    if name == "get_problem_duration_stats":
+        from collections import defaultdict
+
+        hours = float(arguments.get("hours", 168))
+        min_severity = arguments.get("min_severity", 0)
+        top_n = int(arguments.get("top_n", 15))
+
+        now = int(datetime.datetime.now().timestamp())
+        window_start = now - int(hours * 3600)
+
+        params = {
+            "source": 0,
+            "object": 0,
+            "value": 1,
+            "time_from": window_start,
+            "time_till": now,
+            "severities": list(range(min_severity, 6)),
+            "output": ["eventid", "objectid", "name", "clock", "r_eventid", "severity"],
+            "selectHosts": ["hostid", "host", "name"],
+            "limit": 20000,
+        }
+        if "hostid" in arguments:
+            params["hostids"] = [arguments["hostid"]]
+        if "groupid" in arguments:
+            params["groupids"] = [arguments["groupid"]]
+
+        prob_events = zapi.event.get(**params)
+        if not prob_events:
+            return [types.TextContent(type="text", text="No problem events found in this period.")]
+
+        r_ids = [e["r_eventid"] for e in prob_events if e.get("r_eventid") and e["r_eventid"] != "0"]
+        recovery_clock: dict = {}
+        if r_ids:
+            rec_events = zapi.event.get(eventids=r_ids, output=["eventid", "clock"])
+            recovery_clock = {e["eventid"]: int(e["clock"]) for e in rec_events}
+
+        # Per-trigger stats
+        trigger_durations: dict = defaultdict(list)
+        trigger_meta2: dict = {}
+        for e in prob_events:
+            tid = e["objectid"]
+            start = max(int(e["clock"]), window_start)
+            r_eid = e.get("r_eventid", "0")
+            end = recovery_clock.get(r_eid, now) if r_eid and r_eid != "0" else now
+            end = min(end, now)
+            dur = max(0, end - start)
+            trigger_durations[tid].append(dur)
+            if tid not in trigger_meta2:
+                hosts_str = ", ".join(h.get("name") or h.get("host", "?") for h in e.get("hosts", []))
+                trigger_meta2[tid] = {
+                    "name": e.get("name", tid),
+                    "hosts": hosts_str,
+                    "severity": e.get("severity", "0"),
+                }
+
+        # Sort by total downtime
+        ranked = sorted(trigger_durations.items(), key=lambda x: sum(x[1]), reverse=True)[:top_n]
+        window_str = util.duration(int(hours * 3600))
+        lines = [f"Problem duration stats — last {window_str}:"]
+        lines.append(f"  {'trigger':<45} {'sev':<12} {'#':>4} {'total':>10} {'avg':>10} {'max':>10}  host")
+        for tid, durs in ranked:
+            meta = trigger_meta2.get(tid, {})
+            total = sum(durs)
+            avg = total // len(durs)
+            mx = max(durs)
+            sev = util.severity(meta.get("severity", "0"))
+            name_str = meta.get("name", tid)[:44]
+            lines.append(
+                f"  {name_str:<45} {sev:<12} {len(durs):>4} "
+                f"{util.duration(total):>10} {util.duration(avg):>10} {util.duration(mx):>10}"
+                f"  {meta.get('hosts', '?')}"
+            )
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── Operational ───────────────────────────────────────────────────────────
+
+    if name == "enable_host":
+        hostid = arguments["hostid"]
+        hosts = zapi.host.get(hostids=[hostid], output=["host"])
+        if not hosts:
+            return [types.TextContent(type="text", text=f"Host {hostid} not found.")]
+        zapi.host.update(hostid=hostid, status=0)
+        return [types.TextContent(type="text", text=f"Host '{hosts[0]['host']}' (id={hostid}) enabled.")]
+
+    if name == "disable_host":
+        hostid = arguments["hostid"]
+        hosts = zapi.host.get(hostids=[hostid], output=["host"])
+        if not hosts:
+            return [types.TextContent(type="text", text=f"Host {hostid} not found.")]
+        zapi.host.update(hostid=hostid, status=1)
+        return [types.TextContent(type="text", text=f"Host '{hosts[0]['host']}' (id={hostid}) disabled.")]
+
+    if name == "update_maintenance":
+        maintenanceid = arguments["maintenanceid"]
+        existing = zapi.maintenance.get(
+            maintenanceids=[maintenanceid],
+            output="extend",
+            selectTimeperiods="extend",
+        )
+        if not existing:
+            return [types.TextContent(type="text", text=f"Maintenance {maintenanceid} not found.")]
+
+        m = existing[0]
+        update: dict = {"maintenanceid": maintenanceid}
+
+        if "name" in arguments:
+            update["name"] = arguments["name"]
+        if "description" in arguments:
+            update["description"] = arguments["description"]
+        if "collect_data" in arguments:
+            update["maintenance_type"] = 0 if arguments["collect_data"] else 1
+
+        # Recalculate time window if start_time or duration_minutes provided
+        if "start_time" in arguments or "duration_minutes" in arguments:
+            if "start_time" in arguments:
+                start_dt = datetime.datetime.fromisoformat(arguments["start_time"])
+                start_ts = int(start_dt.timestamp())
+            else:
+                start_ts = int(m["active_since"])
+
+            if "duration_minutes" in arguments:
+                duration_s = int(arguments["duration_minutes"]) * 60
+            else:
+                duration_s = int(m["active_till"]) - int(m["active_since"])
+
+            update["active_since"] = start_ts
+            update["active_till"] = start_ts + duration_s
+            update["timeperiods"] = [{
+                "timeperiod_type": 0,
+                "start_date": start_ts,
+                "period": duration_s,
+            }]
+
+        zapi.maintenance.update(**update)
+        return [types.TextContent(type="text", text=f"Maintenance {maintenanceid} updated.")]
+
+    if name == "add_host_to_group":
+        hostid = arguments["hostid"]
+        groupid = arguments["groupid"]
+        zapi.hostgroup.massadd(
+            hosts=[{"hostid": hostid}],
+            groups=[{"groupid": groupid}],
+        )
+        return [types.TextContent(type="text", text=f"Host {hostid} added to group {groupid}.")]
+
+    if name == "remove_host_from_group":
+        hostid = arguments["hostid"]
+        groupid = arguments["groupid"]
+        zapi.hostgroup.massremove(
+            hostids=[hostid],
+            groupids=[groupid],
+        )
+        return [types.TextContent(type="text", text=f"Host {hostid} removed from group {groupid}.")]
 
     raise ValueError(f"Unknown tool: {name}")
 
