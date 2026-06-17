@@ -506,8 +506,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             "output": ["eventid", "objectid", "name", "severity", "clock", "acknowledged", "r_eventid"],
             "recent": False,
             "severities": list(range(min_severity, 6)),
-            "sortfield": ["severity", "clock"],
-            "sortorder": ["DESC", "DESC"],
+            "sortfield": "eventid",
+            "sortorder": "DESC",
             "limit": limit,
         }
         if "hostid" in arguments:
@@ -516,6 +516,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             params["groupids"] = [arguments["groupid"]]
 
         problems = zapi.problem.get(**params)
+        problems.sort(key=lambda p: (int(p["severity"]), int(p["clock"])), reverse=True)
         if not problems:
             return [types.TextContent(type="text", text="No active problems.")]
 
