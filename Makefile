@@ -1,4 +1,4 @@
-IMAGE   := zabbix-mcp
+IMAGE   := lordraw/zabbix-mcp
 # Use the nearest git tag (e.g. v1.2.0); fall back to "dev" when outside a repo.
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 
@@ -17,15 +17,9 @@ build:         ## Build the Docker image (tags: :VERSION and :latest)
 		.
 	@echo "Built $(IMAGE):$(VERSION) and $(IMAGE):latest"
 
-push:          ## Push :VERSION and :latest to the registry (set REGISTRY= to override)
-	@if [ -z "$(REGISTRY)" ]; then \
-		echo "ERROR: set REGISTRY, e.g.  make push REGISTRY=registry.example.com/myrepo"; \
-		exit 1; \
-	fi
-	docker tag $(IMAGE):$(VERSION) $(REGISTRY)/$(IMAGE):$(VERSION)
-	docker tag $(IMAGE):$(VERSION) $(REGISTRY)/$(IMAGE):latest
-	docker push $(REGISTRY)/$(IMAGE):$(VERSION)
-	docker push $(REGISTRY)/$(IMAGE):latest
+push:          ## Push :VERSION and :latest to Docker Hub (docker login required)
+	docker push $(IMAGE):$(VERSION)
+	docker push $(IMAGE):latest
 
 run:           ## Run the MCP server interactively (reads .env)
 	docker run --rm -i --env-file .env $(IMAGE):$(VERSION)
