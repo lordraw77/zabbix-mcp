@@ -1,0 +1,5 @@
+mcp==1.27.1
+openai>=1.30.0
+pyzabbix>=1.3.0
+python-dotenv==1.2.2
+requests==2.34.2
