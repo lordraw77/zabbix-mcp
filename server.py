@@ -1016,6 +1016,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         params = {
             "output": ["eventid", "objectid", "name", "severity", "clock", "acknowledged", "r_eventid"],
+            "selectHosts": ["hostid", "host", "name"],
             "recent": False,
             "severities": list(range(min_severity, 6)),
             "sortfield": "eventid",
@@ -1035,8 +1036,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         lines = []
         for p in problems:
             ack = "ack" if p.get("acknowledged") == "1" else "unack"
+            hosts_str = ", ".join(
+                h.get("name") or h.get("host", "?") for h in p.get("hosts", [])
+            ) or "?"
             lines.append(
                 f"[{util.severity(p['severity'])}] {p['name']} | "
+                f"host={hosts_str} | "
                 f"time={util.ts(p['clock'])} | {ack} | "
                 f"eventid={p['eventid']} triggerid={p['objectid']}"
             )
