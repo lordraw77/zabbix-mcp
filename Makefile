@@ -1,8 +1,9 @@
 IMAGE   := lordraw/zabbix-mcp
 # Use the nearest git tag (e.g. v1.2.0); fall back to "dev" when outside a repo.
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
+PORT    ?= 8000
 
-.PHONY: help build push run shell lint install test clean
+.PHONY: help build push run run-sse shell lint install test clean
 
 help:          ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) \
@@ -21,8 +22,22 @@ push:          ## Push :VERSION and :latest to Docker Hub (docker login required
 	docker push $(IMAGE):$(VERSION)
 	docker push $(IMAGE):latest
 
-run:           ## Run the MCP server interactively (reads .env)
+run:           ## Run the MCP server over stdio (reads .env)
 	docker run --rm -i --env-file .env $(IMAGE):$(VERSION)
+
+run-sse:       ## Run the MCP server over HTTP/SSE on PORT (default 8000)
+	docker run --rm \
+		--env-file .env \
+		-e MCP_TRANSPORT=sse \
+		-e MCP_PORT=$(PORT) \
+		-p $(PORT):$(PORT) \
+		$(IMAGE):$(VERSION)
+
+compose-sse:   ## Start the SSE server via docker compose (detached)
+	MCP_PORT=$(PORT) docker compose up -d zabbix-mcp-sse
+
+compose-down:  ## Stop all compose services
+	docker compose down
 
 shell:         ## Open a shell inside the image for debugging
 	docker run --rm -it --env-file .env --entrypoint /bin/bash $(IMAGE):$(VERSION)

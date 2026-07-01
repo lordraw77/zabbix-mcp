@@ -10,7 +10,7 @@ capabilities as callable tools for AI agents and MCP-compatible clients.
 - 30 tools across 11 categories (hosts, problems/triggers, items/history,
   maintenance, host groups, events, graphs, templates, inventory, actions,
   users, analytics, operational)
-- Transport: **stdio** — JSON-RPC 2.0 framing managed by the `mcp` library
+- Transports: **stdio** (default) and **HTTP/SSE** — selectable via env var or CLI flag
 - Protocol: **MCP 2024-11-05**
 - Auth: API token (Zabbix 5.4+) or user/password, loaded from `.env`
 - Bundled interactive CLI agent using NVIDIA, OpenRouter or Groq as LLM
@@ -24,6 +24,8 @@ capabilities as callable tools for AI agents and MCP-compatible clients.
 - A Zabbix instance reachable from the server process (5.4+ recommended for
   token auth)
 - An API key for at least one LLM provider (if using the agent)
+- `starlette` and `uvicorn` (only required for HTTP/SSE transport — included in
+  `requirements.txt`)
 
 ---
 
@@ -83,16 +85,45 @@ cp .env.example .env
 
 ## Running the server
 
-The server communicates over stdio and is normally spawned by an MCP client.
-You can also start it manually for debugging:
+### stdio transport (default)
+
+The server reads JSON-RPC 2.0 from stdin and writes to stdout.
+It is normally spawned by an MCP client (Claude Desktop, an agent, etc.).
 
 ```bash
 python server.py
+# or explicitly
+python server.py --transport stdio
 # or with venv
 .venv/bin/python server.py
 # or with Docker
 docker run --rm -i --env-file .env zabbix-mcp:latest
 ```
+
+### HTTP/SSE transport
+
+The server starts a Starlette/uvicorn HTTP server. Clients connect to
+`GET /sse` to receive events and `POST /messages/` to send requests.
+
+```bash
+# local
+python server.py --transport sse --host 0.0.0.0 --port 8000
+# or via env vars
+MCP_TRANSPORT=sse MCP_PORT=8000 python server.py
+# or with Docker
+docker run --rm --env-file .env -e MCP_TRANSPORT=sse -p 8000:8000 zabbix-mcp:latest
+# or via Make
+make run-sse
+make run-sse PORT=9000
+```
+
+**Transport environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_TRANSPORT` | `stdio` | `stdio` or `sse` |
+| `MCP_HOST` | `0.0.0.0` | Bind address (SSE mode only) |
+| `MCP_PORT` | `8000` | TCP port (SSE mode only) |
 
 See [DOCKER.md](DOCKER.md) for full Docker usage and Claude Desktop integration.
 
@@ -229,7 +260,7 @@ You: Show me all active problems with severity High or above
 
 ```
 zabbix-mcp/
-├── server.py          — MCP server (10 tools, stdio transport)
+├── server.py          — MCP server (30 tools, stdio + HTTP/SSE transports)
 ├── util.py            — Zabbix code → human-readable string converters
 ├── agent.py           — Interactive CLI agent
 ├── llm.py             — LLM provider registry and agentic loop
@@ -267,7 +298,7 @@ decode errors, and asyncio timeouts gracefully.
 
 ## Integrating with Claude Desktop
 
-Add this block to `claude_desktop_config.json`:
+### stdio mode (subprocess — no port needed)
 
 ```json
 {
@@ -280,7 +311,7 @@ Add this block to `claude_desktop_config.json`:
 }
 ```
 
-Or, without Docker:
+Without Docker:
 
 ```json
 {
@@ -288,6 +319,30 @@ Or, without Docker:
     "zabbix": {
       "command": "/opt/zabbix-mcp/.venv/bin/python",
       "args": ["/opt/zabbix-mcp/server.py"]
+    }
+  }
+}
+```
+
+### HTTP/SSE mode (remote/persistent container)
+
+First start the container:
+
+```bash
+docker run -d --name zabbix-mcp \
+  --env-file /path/to/.env \
+  -e MCP_TRANSPORT=sse \
+  -p 8000:8000 \
+  zabbix-mcp:latest
+```
+
+Then add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "zabbix": {
+      "url": "http://localhost:8000/sse"
     }
   }
 }

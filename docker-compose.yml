@@ -1,0 +1,35 @@
+services:
+
+  # ── stdio mode (default) ────────────────────────────────────────────────────
+  # Spawned on demand by an MCP client (Claude Desktop, agent, etc.).
+  # Run manually for smoke-testing: docker compose run --rm zabbix-mcp-stdio
+  zabbix-mcp-stdio:
+    image: lordraw/zabbix-mcp:latest
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      MCP_TRANSPORT: stdio
+    stdin_open: true
+    tty: false
+
+  # ── SSE mode ────────────────────────────────────────────────────────────────
+  # Persistent HTTP server — clients connect to http://localhost:8000/sse
+  # Start with: docker compose up zabbix-mcp-sse
+  zabbix-mcp-sse:
+    image: lordraw/zabbix-mcp:latest
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    ports:
+      - "${MCP_PORT:-9950}:${MCP_PORT:-9950}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:${MCP_PORT:-9950}/sse', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

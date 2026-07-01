@@ -3,10 +3,22 @@ server.py — Zabbix MCP Server
 ==============================
 Implements a Model Context Protocol (MCP) server that exposes Zabbix
 monitoring capabilities as callable tools.  An AI agent (or any MCP client)
-connects to this process over stdio and can query hosts, active problems,
-item metrics, history and maintenance windows.
+can connect either over stdio or over HTTP with Server-Sent Events (SSE).
 
-Transport  : stdio  (JSON-RPC 2.0 framing managed by the mcp library)
+Transports
+----------
+  stdio (default)
+    The process reads JSON-RPC 2.0 from stdin and writes to stdout.
+    Spawn with: python server.py
+    or:         python server.py --transport stdio
+
+  HTTP/SSE
+    An HTTP server (Starlette + uvicorn) listens on a TCP port.
+    Clients connect to GET /sse to receive server events, and POST to
+    /messages/ to send requests.
+    Spawn with: python server.py --transport sse [--host 0.0.0.0] [--port 8000]
+    or via env: MCP_TRANSPORT=sse MCP_HOST=0.0.0.0 MCP_PORT=8000 python server.py
+
 Protocol   : MCP 2024-11-05
 Auth       : credentials loaded from .env via python-dotenv
 API backend: pyzabbix (thin Python wrapper over the Zabbix JSON-RPC API)
@@ -73,8 +85,13 @@ Environment variables (via .env)
   ZABBIX_USER                  — username (password auth)
   ZABBIX_PASSWORD              — password (password auth)
   ZABBIX_VERIFY_SSL            — true/false, whether to verify TLS (default true)
+
+  MCP_TRANSPORT                — stdio (default) | sse
+  MCP_HOST                     — bind address for SSE mode (default 0.0.0.0)
+  MCP_PORT                     — TCP port for SSE mode (default 8000)
 """
 
+import argparse
 import os
 import asyncio
 import datetime
@@ -1850,7 +1867,29 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 # Entry point
 # ---------------------------------------------------------------------------
 
-async def main():
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Zabbix MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default=os.getenv("MCP_TRANSPORT", "stdio"),
+        help="Transport to use: stdio (default) or sse (HTTP/SSE)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("MCP_HOST", "0.0.0.0"),
+        help="Bind host for SSE mode (default 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MCP_PORT", "8000")),
+        help="TCP port for SSE mode (default 8000)",
+    )
+    return parser.parse_args()
+
+
+async def _run_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -1859,5 +1898,37 @@ async def main():
         )
 
 
+def _run_sse(host: str, port: int) -> None:
+    from mcp.server.sse import SseServerTransport
+    import uvicorn
+
+    sse = SseServerTransport("/messages/")
+
+    async def handle_sse(scope, receive, send):
+        async with sse.connect_sse(scope, receive, send) as streams:
+            await server.run(
+                streams[0], streams[1], server.create_initialization_options()
+            )
+
+    async def asgi_app(scope, receive, send):
+        if scope["type"] == "lifespan":
+            await receive()
+            await send({"type": "lifespan.startup.complete"})
+            await receive()
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+        path = scope.get("path", "")
+        if path == "/sse":
+            await handle_sse(scope, receive, send)
+        elif path.startswith("/messages/"):
+            await sse.handle_post_message(scope, receive, send)
+
+    uvicorn.run(asgi_app, host=host, port=port)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    args = _parse_args()
+    if args.transport == "sse":
+        _run_sse(args.host, args.port)
+    else:
+        asyncio.run(_run_stdio())
