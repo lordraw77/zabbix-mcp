@@ -1033,7 +1033,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         params = {
             "output": ["eventid", "objectid", "name", "severity", "clock", "acknowledged", "r_eventid"],
-            "selectHosts": ["hostid", "host", "name"],
             "recent": False,
             "severities": list(range(min_severity, 6)),
             "sortfield": "eventid",
@@ -1050,12 +1049,20 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         if not problems:
             return [types.TextContent(type="text", text="No active problems.")]
 
+        # Zabbix 7.x removed selectHosts from problem.get — resolve via trigger.get
+        triggerids = list({p["objectid"] for p in problems})
+        triggers = zapi.trigger.get(
+            triggerids=triggerids,
+            selectHosts=["hostid", "host", "name"],
+            output=["triggerid"],
+        )
+        trigger_hosts = {t["triggerid"]: t.get("hosts", []) for t in triggers}
+
         lines = []
         for p in problems:
             ack = "ack" if p.get("acknowledged") == "1" else "unack"
-            hosts_str = ", ".join(
-                h.get("name") or h.get("host", "?") for h in p.get("hosts", [])
-            ) or "?"
+            hosts = trigger_hosts.get(p["objectid"], [])
+            hosts_str = ", ".join(h.get("name") or h.get("host", "?") for h in hosts) or "?"
             lines.append(
                 f"[{util.severity(p['severity'])}] {p['name']} | "
                 f"host={hosts_str} | "
